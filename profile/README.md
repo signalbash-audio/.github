@@ -5,11 +5,11 @@ The plugin sends data to your Signalbash account to display your activity over t
 
 ## Links
 
-- [Download DAW Plugin](https://signalbash.com/plugin-download)
+- [Signalbash Audio Plugin](https://signalbash.com/plugin-download)
 - [Live DAW Activity Leaderboard](https://signalbash.com/)
 - [Support Site](https://info.signalbash.com/)
 
-## Live Stats
+## Live Signalbash Stats: Top 5 DAWs Today
 
 <!-- LIVE_STATS_START -->
 | Rank | DAW | Users | Activity |
