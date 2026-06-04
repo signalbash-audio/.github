@@ -16,9 +16,55 @@ OUTPUT_PATH = os.path.join(BASE_DIR, "profile", "README.md")
 START_MARKER = "<!-- LIVE_STATS_START -->"
 END_MARKER = "<!-- LIVE_STATS_END -->"
 
-CONTAINER_KEYS = ("data", "results", "items", "daws", "top", "stats", "activity")
-NAME_KEYS = ("daw", "name", "daw_name", "application", "app", "title")
-VALUE_KEYS = ("count", "value", "activity", "sessions", "total", "plays")
+CONTAINER_KEYS = (
+    "daw_stats",
+    "data",
+    "results",
+    "items",
+    "daws",
+    "top",
+    "stats",
+    "activity",
+)
+NAME_KEYS = (
+    "daw",
+    "name",
+    "daw_name",
+    "dawName",
+    "host",
+    "host_name",
+    "hostName",
+    "application",
+    "app",
+    "title",
+)
+VALUE_KEYS = (
+    "total_activity_ms",
+    "totalActivityMs",
+    "total_activity_seconds",
+    "totalActivitySeconds",
+    "total_activity",
+    "totalActivity",
+    "total_time_ms",
+    "totalTimeMs",
+    "duration_ms",
+    "durationMs",
+    "count",
+    "value",
+    "activity",
+    "sessions",
+    "total",
+    "plays",
+)
+USER_KEYS = (
+    "total_users",
+    "totalUsers",
+    "users",
+    "user_count",
+    "userCount",
+    "unique_users",
+    "uniqueUsers",
+)
 
 
 def required_env(name):
@@ -74,8 +120,8 @@ def find_entries(payload):
 def first_present(item, keys):
     for key in keys:
         if key in item and item[key] is not None:
-            return item[key]
-    return None
+            return key, item[key]
+    return None, None
 
 
 def normalize_activity(value):
@@ -100,26 +146,158 @@ def normalize_activity(value):
     return None
 
 
+def normalize_schema_key(value):
+    return "".join(char for char in str(value).lower() if char.isalnum())
+
+
+def schema_index(schema, aliases):
+    normalized_aliases = {normalize_schema_key(alias) for alias in aliases}
+
+    for index, name in enumerate(schema):
+        if normalize_schema_key(name) in normalized_aliases:
+            return index
+
+    return None
+
+
+def schema_value_kind(name):
+    normalized = normalize_schema_key(name)
+    if "ms" in normalized or "milliseconds" in normalized:
+        return "milliseconds"
+    if "seconds" in normalized:
+        return "seconds"
+    if normalized in ("totaltime", "totalactivity", "activitytime"):
+        return "milliseconds"
+    return "count"
+
+
+def value_kind(key):
+    normalized = key.lower()
+    if normalized.endswith("ms") or "milliseconds" in normalized:
+        return "milliseconds"
+    if normalized.endswith("seconds") or normalized.endswith("_seconds"):
+        return "seconds"
+    return "count"
+
+
+def normalize_schema_entries(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    schema = payload.get("schema")
+    data = payload.get("data")
+    if not isinstance(schema, list) or not isinstance(data, list):
+        return None
+
+    name_index = schema_index(schema, ("DAW Name", "DAW", "Name", "Host", "Host Name"))
+    users_index = schema_index(
+        schema,
+        ("Total Users", "Users", "User Count", "Unique Users"),
+    )
+    activity_index = schema_index(
+        schema,
+        (
+            "Total Time",
+            "Total Time MS",
+            "Total Time Milliseconds",
+            "Total Activity",
+            "Total Activity MS",
+            "Total Activity Milliseconds",
+            "Activity",
+        ),
+    )
+
+    if name_index is None or activity_index is None:
+        return None
+
+    rows = []
+    activity_kind = schema_value_kind(schema[activity_index])
+
+    for item in data:
+        if not isinstance(item, list):
+            continue
+        if len(item) <= max(name_index, activity_index):
+            continue
+
+        name = item[name_index]
+        activity = normalize_activity(item[activity_index])
+        users = None
+
+        if users_index is not None and len(item) > users_index:
+            users = normalize_activity(item[users_index])
+
+        if name is None or activity is None:
+            continue
+
+        rows.append(
+            {
+                "name": str(name).strip(),
+                "users": users if isinstance(users, int) else None,
+                "activity": activity,
+                "kind": activity_kind,
+            }
+        )
+        if len(rows) == 5:
+            break
+
+    return rows
+
+
 def normalize_entries(entries):
     rows = []
 
-    for item in entries[:5]:
+    for item in entries:
         if not isinstance(item, dict):
             continue
 
-        name = first_present(item, NAME_KEYS)
-        value = first_present(item, VALUE_KEYS)
+        _, name = first_present(item, NAME_KEYS)
+        _, users = first_present(item, USER_KEYS)
+        value_key, value = first_present(item, VALUE_KEYS)
         activity = normalize_activity(value)
 
         if name is None or activity is None:
             continue
 
-        rows.append((str(name).strip(), activity))
+        normalized_users = normalize_activity(users)
+        rows.append(
+            {
+                "name": str(name).strip(),
+                "users": normalized_users if isinstance(normalized_users, int) else None,
+                "activity": activity,
+                "kind": value_kind(value_key),
+            }
+        )
+        if len(rows) == 5:
+            break
 
     if not rows:
-        raise RuntimeError("API response did not contain usable DAW activity entries")
+        raise RuntimeError(
+            "API response did not contain usable DAW activity entries. "
+            f"Entry keys found: {describe_entry_keys(entries)}"
+        )
 
     return rows
+
+
+def normalize_payload(payload):
+    rows = normalize_schema_entries(payload)
+    if rows is not None:
+        return rows
+
+    entries = find_entries(payload)
+    return normalize_entries(entries)
+
+
+def describe_entry_keys(entries):
+    key_sets = []
+
+    for item in entries[:3]:
+        if isinstance(item, dict):
+            key_sets.append(", ".join(sorted(str(key) for key in item.keys())))
+        else:
+            key_sets.append(type(item).__name__)
+
+    return "; ".join(key_sets) if key_sets else "none"
 
 
 def escape_markdown_cell(value):
@@ -135,16 +313,51 @@ def format_activity(value):
     return escape_markdown_cell(value)
 
 
-def render_stats(rows):
-    lines = [
-        "| Rank | DAW | Activity |",
-        "| ---: | --- | ---: |",
-    ]
+def format_duration(total_seconds):
+    total_seconds = max(0, int(round(total_seconds)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
 
-    for rank, (name, activity) in enumerate(rows, start=1):
-        lines.append(
-            f"| {rank} | {escape_markdown_cell(name)} | {format_activity(activity)} |"
-        )
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def format_activity_with_kind(value, kind):
+    if isinstance(value, (int, float)):
+        if kind == "milliseconds":
+            return format_duration(value / 1000)
+        if kind == "seconds":
+            return format_duration(value)
+
+    return format_activity(value)
+
+
+def render_stats(rows):
+    include_users = any(row.get("users") is not None for row in rows)
+
+    if include_users:
+        lines = [
+            "| Rank | DAW | Users | Activity |",
+            "| ---: | --- | ---: | ---: |",
+        ]
+    else:
+        lines = [
+            "| Rank | DAW | Activity |",
+            "| ---: | --- | ---: |",
+        ]
+
+    for rank, row in enumerate(rows, start=1):
+        name = escape_markdown_cell(row["name"])
+        activity = format_activity_with_kind(row["activity"], row["kind"])
+
+        if include_users:
+            users = row["users"] if row["users"] is not None else ""
+            lines.append(f"| {rank} | {name} | {users} | {activity} |")
+        else:
+            lines.append(f"| {rank} | {name} | {activity} |")
 
     now = dt.datetime.now(dt.timezone.utc)
     timestamp = f"{now.strftime('%B')} {now.day}, {now.year} at {now:%H:%M} UTC"
@@ -172,8 +385,7 @@ def main():
         template = template_file.read()
 
     payload = fetch_activity(endpoint, token)
-    entries = find_entries(payload)
-    rows = normalize_entries(entries)
+    rows = normalize_payload(payload)
     rendered = replace_live_stats(template, render_stats(rows))
 
     with open(OUTPUT_PATH, "w", encoding="utf-8") as output_file:
