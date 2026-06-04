@@ -1,1 +1,1 @@
-# (Signalbash)[https://signalbash.com/]
+# [Signalbash](https://signalbash.com/)
