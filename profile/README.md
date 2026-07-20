@@ -14,11 +14,11 @@ The plugin sends data to your Signalbash account to display your activity over t
 <!-- LIVE_STATS_START -->
 | Rank | DAW | Users | Activity |
 | ---: | --- | ---: | ---: |
-| 1 | Ableton Live | 17 | 5h 25m 53s |
-| 2 | FL Studio | 14 | 9h 14m 10s |
-| 3 | Apple Logic | 9 | 10h 5m 32s |
-| 4 | Bitwig Studio | 8 | 13h 21m 33s |
-| 5 | Reaper | 7 | 11h 30m 47s |
+| 1 | Ableton Live | 19 | 12h 55m 41s |
+| 2 | FL Studio | 16 | 7h 24m 13s |
+| 3 | Reaper | 13 | 12h 49m 18s |
+| 4 | Bitwig Studio | 10 | 12h 6m 16s |
+| 5 | Apple Logic | 6 | 10h 20m 28s |
 
-_Last updated: July 19, 2026 at 03:17 UTC._
+_Last updated: July 20, 2026 at 03:42 UTC._
 <!-- LIVE_STATS_END -->
